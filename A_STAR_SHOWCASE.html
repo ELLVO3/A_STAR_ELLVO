@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wizualizacja A*</title>
+<style>
+:root{--bg:#f3f5f7;--fg:#18222d;--muted:#5d6b7a;--card:#fff;--line:#d3dae1;--accent:#1f5fd6;
+--wall:#27323d;--free:#fff;--open:#86d6a4;--closed:#a9c1ee;--cur:#ff8a2b;--path:#f5c518;--start:#17894f;--goal:#cc2f6a;--grid:#e3e8ec;
+color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f151b;--fg:#e6ebf0;--muted:#92a0ae;--card:#18212a;--line:#2c3945;--accent:#6e9cff;
+--wall:#050809;--free:#1c262f;--open:#2d8a55;--closed:#3a5ba5;--cur:#ff9a45;--path:#e6b800;--start:#27b36b;--goal:#ec5b8f;--grid:#2a3641;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f151b;--fg:#e6ebf0;--muted:#92a0ae;--card:#18212a;--line:#2c3945;--accent:#6e9cff;
+--wall:#050809;--free:#1c262f;--open:#2d8a55;--closed:#3a5ba5;--cur:#ff9a45;--path:#e6b800;--start:#27b36b;--goal:#ec5b8f;--grid:#2a3641;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:16px}
+h1{font-size:1.35rem;margin:0 0 2px;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:0 0 14px;font-size:.9rem}
+.layout{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.board{flex:1 1 340px;max-width:600px;min-width:0}
+.side{flex:1 1 280px;min-width:0;display:flex;flex-direction:column;gap:12px}
+canvas{display:block;width:100%;aspect-ratio:1;border:1px solid var(--line);border-radius:6px;touch-action:none;cursor:crosshair;background:var(--free)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+button,.fbtn{font:inherit;font-size:.88rem;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:5px;padding:6px 10px;cursor:pointer}
+button:hover,.fbtn:hover{border-color:var(--accent)}
+button:focus-visible,.fbtn:focus-within,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+button.main{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;min-width:104px}
+.lbl{font-size:.8rem;color:var(--muted);margin:0 0 6px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.stat b{display:block;font-size:1.25rem;font-variant-numeric:tabular-nums}
+.stat span{font-size:.8rem;color:var(--muted)}
+#msg{min-height:2.9em;margin:0}
+#hov{min-height:2.9em;margin:0;color:var(--muted);font-size:.88rem}
+.leg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.82rem;color:var(--muted)}
+.leg i{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:5px;vertical-align:-1px;border:1px solid var(--line)}
+label.chk{font-size:.86rem;display:flex;gap:6px;align-items:center;cursor:pointer}
+input[type=range]{flex:1;min-width:90px;accent-color:var(--accent)}
+input[type=number]{width:64px;font:inherit;font-size:.88rem;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:5px;padding:5px 6px}
+.fbtn input{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Wizualizacja algorytmu A*</h1>
+<p class="sub">Port funkcji astar() z C++: siatka 20×20, ruch w 4 kierunkach (kolejność sąsiadów: (0, +1), (0, −1), (−1, 0), (+1, 0)), koszt kroku 1, heurystyka euklidesowa. Przy remisie f wybierany jest ostatni węzeł z listy otwartej (&lt;=). Oś Y rośnie ku górze, tak jak w printMap().</p>
+<div class="layout">
+<div class="board">
+<canvas id="c" width="800" height="800" aria-label="Siatka algorytmu A*"></canvas>
+<div class="leg" style="margin-top:10px">
+<span><i style="background:var(--wall)"></i>ściana (5)</span>
+<span><i style="background:var(--open)"></i>lista otwarta</span>
+<span><i style="background:var(--closed)"></i>lista zamknięta</span>
+<span><i style="background:var(--cur)"></i>bieżący węzeł</span>
+<span><i style="background:var(--path)"></i>ścieżka (6)</span>
+</div>
+</div>
+<div class="side">
+<div class="card">
+<p class="lbl">Edycja mapy (przeciągaj po siatce)</p>
+<div class="row" id="tools">
+<button data-tool="wall" class="on">Ściana</button>
+<button data-tool="erase">Gumka</button>
+<button data-tool="start">Start</button>
+<button data-tool="goal">Cel</button>
+</div>
+<div class="row" style="margin-top:8px">
+<button id="clear">Wyczyść</button>
+<button id="rand">Losowe ściany</button>
+<label class="fbtn">Wczytaj grid.txt<input type="file" id="file" accept=".txt,text/plain"></label>
+</div>
+</div>
+<div class="card">
+<p class="lbl">Wywołanie astar(map, x_pocz, y_pocz, x_kon, y_kon). Domyślnie jak w main(): 0, 0, 19, 19. Wartości spoza 0–19 uruchamiają testy granic mapy.</p>
+<div class="row" style="gap:10px">
+<label class="chk">x_pocz<input type="number" id="ax" step="1"></label>
+<label class="chk">y_pocz<input type="number" id="ay" step="1"></label>
+<label class="chk">x_kon<input type="number" id="bx" step="1"></label>
+<label class="chk">y_kon<input type="number" id="by" step="1"></label>
+</div>
+</div>
+<div class="card">
+<p class="lbl">Przebieg algorytmu</p>
+<div class="row">
+<button id="reset" title="Od początku">⏮</button>
+<button id="back" title="Krok wstecz">◀</button>
+<button id="play" class="main">Odtwarzaj</button>
+<button id="fwd" title="Następny krok">▶</button>
+<button id="end" title="Do końca">⏭</button>
+</div>
+<div class="row" style="margin-top:10px">
+<span class="lbl" style="margin:0">Wolno</span><input type="range" id="spd" min="1" max="60" value="12" aria-label="Prędkość"><span class="lbl" style="margin:0">Szybko</span>
+</div>
+<div class="row" style="margin-top:10px;gap:16px">
+<label class="chk"><input type="checkbox" id="showF" checked>Wartość f</label>
+<label class="chk"><input type="checkbox" id="showP">Rodzice</label>
+</div>
+</div>
+<div class="card">
+<div class="stats">
+<div class="stat"><b id="sStep">0</b><span>krok</span></div>
+<div class="stat"><b id="sRes">–</b><span>wynik</span></div>
+<div class="stat"><b id="sOpen">0</b><span>lista otwarta</span></div>
+<div class="stat"><b id="sClosed">0</b><span>lista zamknięta</span></div>
+</div>
+<p id="msg" style="margin-top:10px">Naciśnij Odtwarzaj albo ▶, aby wykonać pierwszy krok.</p>
+</div>
+<div class="card"><p id="hov">Najedź na komórkę, aby zobaczyć g, h i f.</p></div>
+</div>
+</div>
+</div>
+<script>
+const N=20,WALL=5,CS=800/N;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const $=id=>document.getElementById(id);
+let grid,S={x:0,y:0},G={x:19,y:19},hist=null,k=-1,timer=null,tool='wall',hover=null,drawing=false;
+const empty=()=>Array.from({length:N},()=>Array(N).fill(0));
+/* C++: x < 0 || x > MAP_SIZE-1 || y < 0 || y > MAP_SIZE-1 */
+const out=p=>p.x<0||p.x>N-1||p.y<0||p.y>N-1;
+function defaults(){
+  grid=empty();S={x:0,y:0};G={x:19,y:19};
+  for(let y=2;y<N;y++)grid[y][10]=WALL;
+  for(let y=0;y<15;y++)grid[y][15]=WALL;
+  for(let x=3;x<=8;x++)grid[7][x]=WALL;
+}
+/* Port astar(grid, x_pocz, y_pocz, x_kon, y_kon) z C++, linia po linii:
+   te same testy wejścia (w tej samej kolejności) i dosłowne komunikaty, ten sam warunek wczesnego zwrotu,
+   te same kierunki, wybór najlepszego f przez <=, aktualizacja g/f/parent tylko gdy nowe g < starego. */
+function compute(){
+  const K=(x,y)=>y*N+x,hf=(x,y)=>Math.sqrt(Math.pow(x-G.x,2)+Math.pow(y-G.y,2));
+  const D=[[0,1],[0,-1],[-1,0],[1,0]],closed=[],steps=[],seen=new Set();let open=[];
+  const mk=(x,y,g,p)=>{const h=hf(x,y);return{x,y,g,h,f:g+h,parent:p}};
+  const snap=(msg,ex)=>steps.push(Object.assign({nc:closed.length,msg,
+    open:open.map(n=>({x:n.x,y:n.y,g:n.g,h:n.h,f:n.f,px:n.parent.x,py:n.parent.y}))},ex));
+  /* Testy wejścia: astar() wypisuje komunikat i zwraca nullptr, a main() wypisuje „womp womp”. */
+  const WOMP=' main(): „Nie ma mozliwosci dotarcia do celu womp womp :(”';
+  const err=m=>{hist={steps:[{nc:0,open:[],done:true,fail:true,msg:'astar(): „'+m+'”.'+WOMP}],closed:[]}};
+  if(out(S)&&out(G))return err('Cel i poczatek znajdujom siem poza granicami mapy gg');
+  if(out(S))return err('Poczatek jest poza granicami mapy gg');
+  if(out(G))return err('Cel jest poza granicami mapy gg');
+  const gw=grid[G.y][G.x]===WALL,sw=grid[S.y][S.x]===WALL;
+  if(gw&&sw)return err('Cel i poczatek to przeszkody gg');
+  if(gw)return err('Cel to przeszkoda gg');
+  if(sw)return err('Poczatek to przeszkoda gg');
+
+  function expand(c){
+    let add=0,upd=0;
+    for(const[dx,dy]of D){
+      const x=c.x+dx,y=c.y+dy;
+      if(x<0||x>=N||y<0||y>=N||grid[y][x]===WALL||seen.has(K(x,y)))continue;
+      const g=c.g+1,o=open.find(n=>n.x===x&&n.y===y);
+      if(!o){open.push(mk(x,y,g,c));add++}
+      else if(g<o.g){o.g=g;o.f=g+o.h;o.parent=c;upd++}
+    }
+    return[add,upd];
+  }
+  const st=mk(S.x,S.y,0,null);closed.push(st);seen.add(K(st.x,st.y));
+  /* C++: if (x_pocz == x_kon && y_pocz == y_kon) return starter; */
+  if(S.x===G.x&&S.y===G.y){
+    snap('Start i cel są na tym samym polu ('+S.x+', '+S.y+'): astar() od razu zwraca węzeł startowy. main(): „Jest trasa, nice!”',{done:true,path:[[S.x,S.y]],len:0});
+    hist={steps,closed};return;
+  }
+  let[a,u]=expand(st),found=false;
+  snap('Start ('+S.x+', '+S.y+') trafia na listę zamkniętą; dodano '+a+' sąsiadów do listy otwartej.',{});
+  while(open.length){
+    let b=0;for(let i=0;i<open.length;i++)if(open[i].f<=open[b].f)b=i;
+    const c=open.splice(b,1)[0];closed.push(c);seen.add(K(c.x,c.y));
+    if(c.x===G.x&&c.y===G.y){
+      const path=[];for(let t=c;t;t=t.parent)path.push([t.x,t.y]);
+      snap('Cel osiągnięty. Ścieżka ma '+c.g+' kroków i '+path.length+' węzłów. main(): „Jest trasa, nice!”',{done:true,path,len:c.g});found=true;break;
+    }
+    [a,u]=expand(c);
+    snap('Wybrano ('+c.x+', '+c.y+') z najmniejszym f = '+c.f.toFixed(2)+'; dodano '+a+', zaktualizowano '+u+'.',{});
+  }
+  if(!found)snap('Lista otwarta jest pusta, astar() zwraca nullptr.'+WOMP,{done:true,fail:true});
+  hist={steps,closed};
+}
+function draw(){
+  const cs=getComputedStyle(document.documentElement),v=n=>cs.getPropertyValue(n).trim();
+  const cell=(x,y,c)=>{ctx.fillStyle=c;ctx.fillRect(x*CS,(N-1-y)*CS,CS,CS)};
+  const mid=(x,y)=>[x*CS+CS/2,(N-1-y)*CS+CS/2];
+  ctx.fillStyle=v('--free');ctx.fillRect(0,0,800,800);
+  const s=hist&&k>=0?hist.steps[k]:null;
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(grid[y][x]===WALL)cell(x,y,v('--wall'));
+  if(s){
+    for(let i=0;i<s.nc;i++)cell(hist.closed[i].x,hist.closed[i].y,v('--closed'));
+    for(const o of s.open)cell(o.x,o.y,v('--open'));
+    if(!s.fail){const c=hist.closed[s.nc-1];cell(c.x,c.y,v('--cur'))}
+    if(s.path)for(const[x,y]of s.path)cell(x,y,v('--path'));
+  }
+  ctx.strokeStyle=v('--grid');ctx.lineWidth=1;ctx.beginPath();
+  for(let i=0;i<=N;i++){ctx.moveTo(i*CS,0);ctx.lineTo(i*CS,800);ctx.moveTo(0,i*CS);ctx.lineTo(800,i*CS)}
+  ctx.stroke();
+  if(s&&$('showP').checked){
+    ctx.strokeStyle=v('--fg');ctx.globalAlpha=.55;ctx.lineWidth=2;ctx.beginPath();
+    const link=(x,y,px,py)=>{const a=mid(x,y),b=mid(px,py);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1])};
+    for(let i=1;i<s.nc;i++){const c=hist.closed[i];link(c.x,c.y,c.parent.x,c.parent.y)}
+    for(const o of s.open)link(o.x,o.y,o.px,o.py);
+    ctx.stroke();ctx.globalAlpha=1;
+  }
+  if(s&&$('showF').checked){
+    ctx.fillStyle=v('--fg');ctx.font='600 15px system-ui,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    const t=n=>{const m=mid(n.x,n.y);ctx.fillText(n.f.toFixed(1),m[0],m[1])};
+    for(let i=1;i<s.nc;i++)if(!(hist.closed[i].x===G.x&&hist.closed[i].y===G.y))t(hist.closed[i]);
+    for(const o of s.open)t(o);
+  }
+  for(const[p,c,l]of[[S,'--start','S'],[G,'--goal','G']]){
+    if(out(p))continue;
+    const m=mid(p.x,p.y);ctx.fillStyle=v(c);ctx.beginPath();ctx.arc(m[0],m[1],CS*.36,0,7);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='700 20px system-ui,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(l,m[0],m[1]+1);
+  }
+  if(hover){ctx.strokeStyle=v('--accent');ctx.lineWidth=4;ctx.strokeRect(hover.x*CS+2,(N-1-hover.y)*CS+2,CS-4,CS-4)}
+}
+function ui(){
+  const s=hist&&k>=0?hist.steps[k]:null;
+  $('sStep').textContent=s?k+1+' / '+hist.steps.length:'0';
+  $('sOpen').textContent=s?s.open.length:0;
+  $('sClosed').textContent=s?s.nc:0;
+  $('sRes').textContent=!s?'–':s.fail?'brak':s.done?s.len+' kr.':'szukam…';
+  $('msg').textContent=s?s.msg:'Naciśnij Odtwarzaj albo ▶, aby wykonać pierwszy krok.';
+  $('play').textContent=timer?'Pauza':'Odtwarzaj';
+  const h=$('hov');
+  if(!hover){h.textContent='Najedź na komórkę, aby zobaczyć g, h i f.';return}
+  const{x,y}=hover;let t='('+x+', '+y+'): ';
+  if(grid[y][x]===WALL)t+='ściana'+(x===S.x&&y===S.y?' (start)':x===G.x&&y===G.y?' (cel)':'');
+  else{
+    let n=null,w='wolne pole';
+    if(s){
+      for(let i=0;i<s.nc;i++){const c=hist.closed[i];if(c.x===x&&c.y===y){n=c;w='lista zamknięta'}}
+      for(const o of s.open)if(o.x===x&&o.y===y){n={g:o.g,h:o.h,f:o.f,parent:{x:o.px,y:o.py}};w='lista otwarta'}
+    }
+    t+=w;
+    if(n)t+='. g = '+n.g+', h = '+n.h.toFixed(2)+', f = '+n.f.toFixed(2)+(n.parent?', rodzic ('+n.parent.x+', '+n.parent.y+')':', brak rodzica');
+  }
+  h.textContent=t;
+}
+const render=()=>{draw();ui()};
+function syncArgs(){$('ax').value=S.x;$('ay').value=S.y;$('bx').value=G.x;$('by').value=G.y}
+function readArgs(){
+  const n=id=>{const q=parseInt($(id).value,10);return isNaN(q)?0:q};
+  S={x:n('ax'),y:n('ay')};G={x:n('bx'),y:n('by')};changed();
+}
+function stop(){if(timer){clearInterval(timer);timer=null}}
+function changed(){stop();hist=null;k=-1;syncArgs();render()}
+function ensure(){if(!hist)compute()}
+function fwd(){ensure();if(k<hist.steps.length-1)k++;else stop();if(k>=hist.steps.length-1)stop();render()}
+function back(){stop();if(hist&&k>=0)k--;render()}
+function play(){
+  if(timer){stop();render();return}
+  ensure();if(k>=hist.steps.length-1)k=-1;
+  timer=setInterval(fwd,1000/$('spd').value);fwd();
+}
+$('play').onclick=play;$('fwd').onclick=()=>{stop();fwd()};$('back').onclick=back;
+$('reset').onclick=()=>{stop();k=-1;render()};
+$('end').onclick=()=>{stop();ensure();k=hist.steps.length-1;render()};
+$('spd').oninput=()=>{if(timer){clearInterval(timer);timer=setInterval(fwd,1000/$('spd').value)}};
+$('showF').onchange=$('showP').onchange=render;
+['ax','ay','bx','by'].forEach(id=>$(id).onchange=readArgs);
+$('clear').onclick=()=>{grid=empty();changed()};
+$('rand').onclick=()=>{
+  grid=empty();
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(Math.random()<.27&&!(x===S.x&&y===S.y)&&!(x===G.x&&y===G.y))grid[y][x]=WALL;
+  changed();
+};
+$('tools').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  tool=b.dataset.tool;[...$('tools').children].forEach(c=>c.classList.toggle('on',c===b));
+};
+$('file').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  f.text().then(txt=>{
+    const nums=txt.match(/-?\d+/g);
+    if(!nums||nums.length<N*N){changed();$('msg').textContent='Plik musi zawierać co najmniej 400 liczb (20 wierszy po 20).';return}
+    /* mapreader(): pierwszy wiersz pliku trafia do grid[19]; tylko wartość 5 jest ścianą. */
+    grid=empty();
+    for(let r=0;r<N;r++)for(let c=0;c<N;c++)grid[N-1-r][c]=+nums[r*N+c]===WALL?WALL:0;
+    S={x:0,y:0};G={x:19,y:19};
+    changed();$('msg').textContent='Wczytano mapę. Pierwszy wiersz pliku to y = 19, start (0, 0), cel (19, 19), jak w main(). Ściana na starcie lub celu zostanie zgłoszona tak jak w astar().';
+  });
+  e.target.value='';
+};
+function cellAt(e){
+  const r=cv.getBoundingClientRect(),x=Math.floor((e.clientX-r.left)/r.width*N),y=N-1-Math.floor((e.clientY-r.top)/r.height*N);
+  return x<0||x>=N||y<0||y>=N?null:{x,y};
+}
+/* Bez blokad: ściana może leżeć na starcie lub celu, żeby można było sprawdzić komunikaty z astar(). */
+function apply(c){
+  if(!c)return;
+  if(tool==='start')S={x:c.x,y:c.y};
+  else if(tool==='goal')G={x:c.x,y:c.y};
+  else{const nv=tool==='wall'?WALL:0;if(grid[c.y][c.x]===nv)return;grid[c.y][c.x]=nv}
+  changed();
+}
+cv.addEventListener('pointerdown',e=>{drawing=true;cv.setPointerCapture(e.pointerId);hover=cellAt(e);apply(hover);render()});
+cv.addEventListener('pointermove',e=>{hover=cellAt(e);if(drawing)apply(hover);render()});
+cv.addEventListener('pointerup',()=>{drawing=false});
+cv.addEventListener('pointerleave',()=>{if(!drawing){hover=null;render()}});
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  if(e.key==='ArrowRight'){stop();fwd()}else if(e.key==='ArrowLeft')back();
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',render);
+defaults();syncArgs();render();
+</script>
+</body>
+</html>
